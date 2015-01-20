@@ -151,6 +151,7 @@
 //RF12 status bits
 #define RF_LBD_BIT      0x0400
 #define RF_RSSI_BIT     0x0100
+#define RF_WKUP_BIT     0x1000
 
 // transceiver states, these determine what to do with each interrupt
 enum {
@@ -165,6 +166,7 @@ class RFM12B
   static volatile uint8_t rxfill;           // number of data bytes in rf12_buf
   static volatile int8_t rxstate;           // current transceiver state
   static volatile uint16_t rf12_crc;        // running crc value
+  static volatile uint16_t status_reg;      // copy of status register
   static uint32_t seqNum;                   // encrypted send sequence number
   static uint32_t cryptKey[4];              // encryption key to use
   static long rf12_seq;                     // seq number of encrypted packet (or -1)
@@ -172,10 +174,10 @@ class RFM12B
   void (*crypter)(bool);                    // does en-/decryption (null if disabled)
   static uint8_t Byte(uint8_t out);
   static uint16_t XFERSlow(uint16_t cmd);
-  static void XFER(uint16_t cmd);
-  
+  static uint16_t XFER(uint16_t cmd);
+
   void SPIInit();
-  
+
 	public:
     //constructor
     RFM12B():Data(rf12_data),DataLen(&rf12_buf[3]){}
@@ -209,7 +211,10 @@ class RFM12B
     void Sleep(uint8_t n, uint8_t r=10);
     void Sleep();
     void Wakeup();
-    
+    // call this immediately after waking up from sleep to determine
+    // if the mcu was woken up by the wake-up timer from the RFM12B interrupt
+    bool DidTimeOut();
+
     volatile uint8_t * GetData();
     uint8_t GetDataLen(); //how many bytes were received
     uint8_t GetSender();

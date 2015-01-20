@@ -14,6 +14,7 @@ uint32_t RFM12B::cryptKey[4];
 volatile uint8_t RFM12B::rxfill;       // number of data bytes in rf12_buf
 volatile int8_t RFM12B::rxstate;       // current transceiver state
 volatile uint16_t RFM12B::rf12_crc;    // running crc value
+volatile uint16_t RFM12B::status_reg;  // last status register read
 volatile uint8_t rf12_buf[RF_MAX];     // recv/xmit buf, including hdr & crc bytes
 
 // function to set chip select
@@ -32,7 +33,7 @@ void RFM12B::SPIInit() {
   pinMode(SPI_MOSI, OUTPUT);
   pinMode(SPI_MISO, INPUT);
   pinMode(SPI_SCK, OUTPUT);
-#ifdef SPCR    
+#ifdef SPCR
   SPCR = _BV(SPE) | _BV(MSTR);
 #if F_CPU > 10000000
   // use clk/2 (2x 1/4th) for sending (and clk/8 for recv, see XFERSlow)
@@ -41,7 +42,7 @@ void RFM12B::SPIInit() {
 #else
   // ATtiny
   USICR = bit(USIWM0);
-#endif    
+#endif
   pinMode(RFM_IRQ, INPUT);
   digitalWrite(RFM_IRQ, 1); // pull-up
 }
@@ -92,15 +93,16 @@ uint16_t RFM12B::XFERSlow(uint16_t cmd) {
   return reply;
 }
 
-void RFM12B::XFER(uint16_t cmd) {
+uint16_t RFM12B::XFER(uint16_t cmd) {
 #if OPTIMIZE_SPI
   // writing can take place at full speed, even 8 MHz works
   bitClear(SS_PORT, cs_pin);
-  Byte(cmd >> 8) << 8;
-  Byte(cmd);
+  uint16_t reply = Byte(cmd >> 8) << 8;
+  reply |= Byte(cmd);
   bitSet(SS_PORT, cs_pin);
+  return reply;
 #else
-  XFERSlow(cmd);
+  return XFERSlow(cmd);
 #endif
 }
 
@@ -198,15 +200,14 @@ uint16_t RFM12B::Control(uint16_t cmd) {
 void RFM12B::InterruptHandler() {
   // a transfer of 2x 16 bits @ 2 MHz over SPI takes 2x 8 us inside this ISR
   // correction: now takes 2 + 8 µs, since sending can be done at 8 MHz
-  XFER(0x0000);
-  
+  status_reg = XFER(0x0000);
+
   if (rxstate == TXRECV) {
     uint8_t in = XFERSlow(RF_RX_FIFO_READ);
 
     if (rxfill == 0 && networkID != 0)
       rf12_buf[rxfill++] = networkID;
 
-    //Serial.print(out, HEX); Serial.print(' ');
     rf12_buf[rxfill++] = in;
     rf12_crc = _crc16_update(rf12_crc, in);
 
@@ -228,8 +229,7 @@ void RFM12B::InterruptHandler() {
           case TXDONE: XFER(RF_IDLE_MODE); // fall through
           default:     out = 0xAA;
         }
-        
-    //Serial.print(out, HEX); Serial.print(' ');
+
     XFER(RF_TXREG_WRITE + out);
   }
 }
@@ -359,9 +359,14 @@ void RFM12B::Wakeup() {
   Control(RF_IDLE_MODE);
   rxstate = TXIDLE;
 }
+bool RFM12B::DidTimeOut() {
+    // the interrupt handler will have caused the WKUP bit to be cleared when
+    // reading the status, so we must test the shadow register instead
+    return (status_reg & RF_WKUP_BIT);
+}
 
 bool RFM12B::LowBattery() {
-  return (Control(0x0000) & RF_LBD_BIT) != 0;
+  return ((status_reg = Control(0x0000)) & RF_LBD_BIT) != 0;
 }
 
 uint8_t RFM12B::GetSender(){
