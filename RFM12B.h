@@ -203,7 +203,10 @@ class RFM12B
     void SendWait(uint8_t waitMode=0);
 
     void OnOff(uint8_t value);
-    void Sleep(char n);
+    // according to the datasheet:
+    //   the wake-up time period = 1.03 * n * 2^r + 0.5 (ms)
+    //   r should be in the range of 0 - 29
+    void Sleep(uint8_t n, uint8_t r=10);
     void Sleep();
     void Wakeup();
     

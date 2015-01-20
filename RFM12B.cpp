@@ -345,19 +345,20 @@ void RFM12B::OnOff(uint8_t value) {
   XFER(value ? RF_XMITTER_ON : RF_IDLE_MODE);
 }
 
-void RFM12B::Sleep(char n) {
-  if (n < 0)
-    Control(RF_IDLE_MODE);
-  else {
-    Control(RF_WAKEUP_TIMER | 0x0500 | n);
-    Control(RF_SLEEP_MODE);
-    if (n > 0)
-      Control(RF_WAKEUP_MODE);
-  }
+void RFM12B::Sleep(uint8_t n, uint8_t r) {
+  if (r > 29)
+    r = 29;
+  Control(RF_WAKEUP_TIMER | (r << 8) | n);
+  Control(RF_SLEEP_MODE);
+  if (n > 0)
+    Control(RF_WAKEUP_MODE);
   rxstate = TXIDLE;
 }
 void RFM12B::Sleep() { Sleep(0); }
-void RFM12B::Wakeup() { Sleep(-1); }
+void RFM12B::Wakeup() {
+  Control(RF_IDLE_MODE);
+  rxstate = TXIDLE;
+}
 
 bool RFM12B::LowBattery() {
   return (Control(0x0000) & RF_LBD_BIT) != 0;
