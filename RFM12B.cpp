@@ -201,6 +201,13 @@ void RFM12B::InterruptHandler() {
   // a transfer of 2x 16 bits @ 2 MHz over SPI takes 2x 8 us inside this ISR
   // correction: now takes 2 + 8 µs, since sending can be done at 8 MHz
   status_reg = XFER(0x0000);
+  if (rxstate == TXIDLE) {
+    if ((status_reg & RF_WKUP_BIT) || (status_reg & RF_LBD_BIT)) {
+        // we were asleep and were woken up by the wake-up timer or low voltage
+        // interrupt...we don't have anything to send so just return
+        return;
+    }
+  }
 
   if (rxstate == TXRECV) {
     uint8_t in = XFERSlow(RF_RX_FIFO_READ);
